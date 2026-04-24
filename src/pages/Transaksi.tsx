@@ -5,7 +5,10 @@ import type { Alat, Transaksi } from '../types'
 interface TransaksiPageProps {
   alat: Alat[]
   transaksi: Transaksi[]
-  onKeluar: (data: Omit<Transaksi, 'id' | 'createdAt' | 'status' | 'tanggalKembaliAktual' | 'petugasKembali'>) => void
+  onKeluarBatch: (
+    data: Omit<Transaksi, 'id' | 'createdAt' | 'status' | 'tanggalKembaliAktual' | 'petugasKembali' | 'alatId' | 'namaAlat' | 'kodeAlat' | 'jumlah'>,
+    items: Array<{ alatId: string; jumlah: number }>
+  ) => void
   onKembali: (transaksiId: string, petugas: string, catatan?: string) => void
 }
 
@@ -15,13 +18,12 @@ const tomorrow = () => {
 }
 
 const emptyKeluar = () => ({
-  alatId: '', namaAlat: '', kodeAlat: '', jumlah: 1,
   peminjam: '', instansi: '', keperluan: '',
   tanggalKeluar: today(), tanggalKembaliRencana: tomorrow(),
   petugasKeluar: '', catatan: ''
 })
 
-export default function TransaksiPage({ alat, transaksi, onKeluar, onKembali }: TransaksiPageProps) {
+export default function TransaksiPage({ alat, transaksi, onKeluarBatch, onKembali }: TransaksiPageProps) {
   const [tab, setTab] = useState<'keluar' | 'kembali'>('keluar')
 
   // Form Keluar
@@ -29,6 +31,8 @@ export default function TransaksiPage({ alat, transaksi, onKeluar, onKembali }: 
   const [searchAlat, setSearchAlat] = useState('')
   const [showPilihAlat, setShowPilihAlat] = useState(false)
   const [successKeluar, setSuccessKeluar] = useState(false)
+  const [errorKeluar, setErrorKeluar] = useState('')
+  const [selectedItems, setSelectedItems] = useState<Array<{ alatId: string; jumlah: number }>>([])
 
   // Form Kembali
   const [searchTrx, setSearchTrx] = useState('')
@@ -50,18 +54,40 @@ export default function TransaksiPage({ alat, transaksi, onKeluar, onKembali }: 
   )
 
   function pilihAlat(a: Alat) {
-    setFormKeluar(f => ({ ...f, alatId: a.id, namaAlat: a.nama, kodeAlat: a.kode, jumlah: 1 }))
-    setShowPilihAlat(false)
-    setSearchAlat('')
+    setSelectedItems(prev => {
+      if (prev.some(i => i.alatId === a.id)) return prev
+      return [...prev, { alatId: a.id, jumlah: 1 }]
+    })
+  }
+
+  function updateItemQty(alatId: string, jumlah: number) {
+    const qty = Math.max(1, Math.floor(jumlah || 1))
+    setSelectedItems(prev => prev.map(item => item.alatId === alatId ? { ...item, jumlah: qty } : item))
+  }
+
+  function removeItem(alatId: string) {
+    setSelectedItems(prev => prev.filter(item => item.alatId !== alatId))
   }
 
   function handleSubmitKeluar(e: React.FormEvent) {
     e.preventDefault()
-    const { alatId, namaAlat, kodeAlat, jumlah, peminjam, instansi, keperluan, tanggalKeluar, tanggalKembaliRencana, petugasKeluar, catatan } = formKeluar
-    onKeluar({ alatId, namaAlat, kodeAlat, jumlah, peminjam, instansi, keperluan, tanggalKeluar, tanggalKembaliRencana, petugasKeluar, catatan })
-    setFormKeluar(emptyKeluar())
-    setSuccessKeluar(true)
-    setTimeout(() => setSuccessKeluar(false), 3000)
+    setErrorKeluar('')
+    if (selectedItems.length === 0) {
+      setErrorKeluar('Pilih minimal satu alat untuk dipinjam.')
+      return
+    }
+    try {
+      const { peminjam, instansi, keperluan, tanggalKeluar, tanggalKembaliRencana, petugasKeluar, catatan } = formKeluar
+      onKeluarBatch({ peminjam, instansi, keperluan, tanggalKeluar, tanggalKembaliRencana, petugasKeluar, catatan }, selectedItems)
+      setFormKeluar(emptyKeluar())
+      setSelectedItems([])
+      setShowPilihAlat(false)
+      setSearchAlat('')
+      setSuccessKeluar(true)
+      setTimeout(() => setSuccessKeluar(false), 3000)
+    } catch (error) {
+      setErrorKeluar(error instanceof Error ? error.message : 'Gagal menyimpan transaksi keluar.')
+    }
   }
 
   function handleSubmitKembali(e: React.FormEvent) {
@@ -76,7 +102,13 @@ export default function TransaksiPage({ alat, transaksi, onKeluar, onKembali }: 
     setTimeout(() => setSuccessKembali(false), 3000)
   }
 
-  const selectedAlat = alat.find(a => a.id === formKeluar.alatId)
+  const selectedDetail = selectedItems
+    .map(item => {
+      const found = alat.find(a => a.id === item.alatId)
+      return found ? { alat: found, jumlah: item.jumlah } : null
+    })
+    .filter((value): value is { alat: Alat; jumlah: number } => Boolean(value))
+  const totalItemDipinjam = selectedDetail.reduce((sum, item) => sum + item.jumlah, 0)
   const isTerlambat = (t: Transaksi) => new Date(t.tanggalKembaliRencana) < new Date()
 
   return (
@@ -136,30 +168,45 @@ export default function TransaksiPage({ alat, transaksi, onKeluar, onKembali }: 
                 onClick={() => setShowPilihAlat(true)}
                 className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm cursor-pointer hover:border-indigo-400 transition-colors flex items-center justify-between"
               >
-                {formKeluar.alatId ? (
+                {selectedDetail.length > 0 ? (
                   <div>
-                    <span className="font-medium text-gray-800">{formKeluar.namaAlat}</span>
-                    <span className="text-gray-400 ml-2 text-xs">{formKeluar.kodeAlat}</span>
+                    <span className="font-medium text-gray-800">{selectedDetail.length} alat dipilih</span>
+                    <span className="text-gray-400 ml-2 text-xs">{totalItemDipinjam} unit total</span>
                   </div>
                 ) : (
                   <span className="text-gray-400">Klik untuk pilih alat...</span>
                 )}
                 <Search className="w-4 h-4 text-gray-400" />
               </div>
-              {selectedAlat && (
-                <p className="text-xs text-emerald-600 mt-1">Tersedia: {selectedAlat.jumlahTersedia} unit</p>
-              )}
+              <p className="text-xs text-emerald-600 mt-1">Pilih banyak item sekaligus, lalu atur jumlah per item.</p>
             </div>
 
-            {formKeluar.alatId && selectedAlat && (
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Jumlah *</label>
-                <input
-                  type="number" required min={1} max={selectedAlat.jumlahTersedia}
-                  value={formKeluar.jumlah}
-                  onChange={e => setFormKeluar(f => ({ ...f, jumlah: +e.target.value }))}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
+            {selectedDetail.length > 0 && (
+              <div className="space-y-2 rounded-xl border border-gray-200 p-3">
+                <p className="text-xs font-medium text-gray-600">Daftar item dipinjam</p>
+                {selectedDetail.map(({ alat: itemAlat, jumlah }) => (
+                  <div key={itemAlat.id} className="flex items-center gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-800 truncate">{itemAlat.nama}</p>
+                      <p className="text-xs text-gray-500">{itemAlat.kode} · Tersedia {itemAlat.jumlahTersedia}</p>
+                    </div>
+                    <input
+                      type="number"
+                      min={1}
+                      max={itemAlat.jumlahTersedia}
+                      value={jumlah}
+                      onChange={e => updateItemQty(itemAlat.id, Math.min(+e.target.value || 1, itemAlat.jumlahTersedia))}
+                      className="w-20 border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeItem(itemAlat.id)}
+                      className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
 
@@ -210,11 +257,16 @@ export default function TransaksiPage({ alat, transaksi, onKeluar, onKembali }: 
               <textarea rows={2} value={formKeluar.catatan} onChange={e => setFormKeluar(f => ({ ...f, catatan: e.target.value }))}
                 className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none" />
             </div>
+            {errorKeluar && (
+              <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
+                {errorKeluar}
+              </div>
+            )}
 
-            <button type="submit" disabled={!formKeluar.alatId}
+            <button type="submit" disabled={selectedItems.length === 0}
               className="w-full bg-amber-500 hover:bg-amber-600 disabled:bg-gray-200 disabled:text-gray-400 text-white rounded-xl py-3 font-semibold text-sm transition-colors flex items-center justify-center gap-2">
               <ArrowUpRight className="w-4 h-4" />
-              Catat Alat Keluar
+              Catat Alat Keluar (Multi Item)
             </button>
           </form>
         </div>
@@ -338,8 +390,14 @@ export default function TransaksiPage({ alat, transaksi, onKeluar, onKembali }: 
 
       {/* Modal Pilih Alat */}
       {showPilihAlat && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[80vh] flex flex-col">
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowPilihAlat(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[80vh] flex flex-col"
+            onClick={e => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between p-4 border-b border-gray-100">
               <h3 className="font-bold text-gray-800">Pilih Alat</h3>
               <button onClick={() => setShowPilihAlat(false)} className="p-1.5 hover:bg-gray-100 rounded-lg">
@@ -360,14 +418,21 @@ export default function TransaksiPage({ alat, transaksi, onKeluar, onKembali }: 
               ) : (
                 filteredAlat.map(a => (
                   <button key={a.id} onClick={() => pilihAlat(a)}
-                    className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-indigo-50 transition-colors text-left">
+                    className={`w-full flex items-center justify-between p-3 rounded-xl transition-colors text-left ${
+                      selectedItems.some(item => item.alatId === a.id) ? 'bg-indigo-50 border border-indigo-200' : 'hover:bg-indigo-50'
+                    }`}>
                     <div>
                       <p className="font-medium text-gray-800 text-sm">{a.nama}</p>
                       <p className="text-xs text-gray-500">{a.kode} · {a.kategori} · {a.merek}</p>
                     </div>
-                    <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-medium">
-                      {a.jumlahTersedia} unit
-                    </span>
+                    <div className="text-right">
+                      <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-medium">
+                        {a.jumlahTersedia} unit
+                      </span>
+                      {selectedItems.some(item => item.alatId === a.id) && (
+                        <p className="text-[11px] text-indigo-600 mt-1">Terpilih</p>
+                      )}
+                    </div>
                   </button>
                 ))
               )}

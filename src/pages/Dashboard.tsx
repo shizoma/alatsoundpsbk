@@ -1,4 +1,5 @@
-import { Package, ArrowUpRight, ArrowDownLeft, AlertTriangle, CheckCircle2, Clock } from 'lucide-react'
+import { useState } from 'react'
+import { Package, ArrowUpRight, ArrowDownLeft, AlertTriangle, CheckCircle2, Clock, X } from 'lucide-react'
 import type { Alat, Transaksi } from '../types'
 
 interface DashboardProps {
@@ -8,6 +9,7 @@ interface DashboardProps {
 }
 
 export default function Dashboard({ alat, transaksi, onNavigate }: DashboardProps) {
+  const [selectedGroupKey, setSelectedGroupKey] = useState<string | null>(null)
   const totalAlat = alat.reduce((s, a) => s + a.jumlah, 0)
   const totalTersedia = alat.reduce((s, a) => s + a.jumlahTersedia, 0)
   const totalDipinjam = totalAlat - totalTersedia
@@ -22,7 +24,40 @@ export default function Dashboard({ alat, transaksi, onNavigate }: DashboardProp
 
   const recentTransaksi = [...transaksi]
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+
+  const groupedRecent = Array.from(
+    recentTransaksi.reduce((map, trx) => {
+      const key = `${trx.createdAt}|${trx.peminjam}|${trx.status}`
+      const current = map.get(key) || {
+        key,
+        createdAt: trx.createdAt,
+        peminjam: trx.peminjam,
+        keperluan: trx.keperluan,
+        status: trx.status,
+        totalItem: 0,
+        totalJenis: 0,
+        items: [] as Transaksi[],
+      }
+      current.totalItem += trx.jumlah
+      current.items.push(trx)
+      current.totalJenis = current.items.length
+      map.set(key, current)
+      return map
+    }, new Map<string, {
+      key: string
+      createdAt: string
+      peminjam: string
+      keperluan: string
+      status: Transaksi['status']
+      totalItem: number
+      totalJenis: number
+      items: Transaksi[]
+    }>())
+  )
+    .map(([, value]) => value)
     .slice(0, 5)
+
+  const selectedGroup = groupedRecent.find(group => group.key === selectedGroupKey) || null
 
   const stats = [
     { label: 'Total Item Alat', value: totalAlat, icon: Package, textColor: 'text-blue-600', bgLight: 'bg-blue-50' },
@@ -137,31 +172,35 @@ export default function Dashboard({ alat, transaksi, onNavigate }: DashboardProp
             Lihat semua →
           </button>
         </div>
-        {recentTransaksi.length === 0 ? (
+        {groupedRecent.length === 0 ? (
           <p className="text-sm text-gray-400 text-center py-6">Belum ada transaksi</p>
         ) : (
           <div className="space-y-2">
-            {recentTransaksi.map(t => (
-              <div key={t.id} className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
-                <div className={`p-1.5 rounded-lg ${t.status === 'Keluar' ? 'bg-amber-50' : 'bg-emerald-50'}`}>
-                  {t.status === 'Keluar'
+            {groupedRecent.map(group => (
+              <button
+                key={group.key}
+                onClick={() => setSelectedGroupKey(group.key)}
+                className="w-full text-left flex items-center gap-3 py-2 border-b border-gray-50 last:border-0 hover:bg-gray-50 rounded-lg px-1"
+              >
+                <div className={`p-1.5 rounded-lg ${group.status === 'Keluar' ? 'bg-amber-50' : 'bg-emerald-50'}`}>
+                  {group.status === 'Keluar'
                     ? <ArrowUpRight className="w-4 h-4 text-amber-600" />
                     : <ArrowDownLeft className="w-4 h-4 text-emerald-600" />
                   }
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-800 truncate">{t.namaAlat}</p>
-                  <p className="text-xs text-gray-500 truncate">{t.peminjam} · {t.keperluan}</p>
+                  <p className="text-sm font-medium text-gray-800 truncate">{group.peminjam} · {group.totalItem} item</p>
+                  <p className="text-xs text-gray-500 truncate">{group.totalJenis} jenis alat · {group.keperluan}</p>
                 </div>
                 <div className="text-right">
                   <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                    t.status === 'Keluar' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
-                  }`}>{t.status}</span>
+                    group.status === 'Keluar' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
+                  }`}>{group.status}</span>
                   <p className="text-xs text-gray-400 mt-1">
-                    {new Date(t.createdAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: '2-digit' })}
+                    {new Date(group.createdAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: '2-digit' })}
                   </p>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         )}
@@ -186,6 +225,37 @@ export default function Dashboard({ alat, transaksi, onNavigate }: DashboardProp
           <p className="text-xs text-gray-400 mt-1">Tambah & edit alat</p>
         </button>
       </div>
+
+      {selectedGroup && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+          onClick={() => setSelectedGroupKey(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[85vh] overflow-hidden flex flex-col"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-4 border-b border-gray-100">
+              <div>
+                <h3 className="font-bold text-gray-800">{selectedGroup.peminjam} · {selectedGroup.totalItem} item</h3>
+                <p className="text-xs text-gray-500">{selectedGroup.totalJenis} jenis alat · {selectedGroup.keperluan}</p>
+              </div>
+              <button onClick={() => setSelectedGroupKey(null)} className="p-1.5 hover:bg-gray-100 rounded-lg">
+                <X className="w-4 h-4 text-gray-500" />
+              </button>
+            </div>
+            <div className="p-4 overflow-y-auto space-y-2">
+              {selectedGroup.items.map(item => (
+                <div key={item.id} className="border border-gray-100 rounded-xl p-3">
+                  <p className="text-sm font-medium text-gray-800">{item.namaAlat}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{item.kodeAlat}</p>
+                  <p className="text-xs text-indigo-600 mt-1">{item.jumlah} unit</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

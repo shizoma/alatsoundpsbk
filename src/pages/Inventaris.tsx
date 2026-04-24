@@ -1,9 +1,6 @@
 import { useState } from 'react'
 import { Plus, Pencil, Trash2, Search, X, CheckCircle2, Package } from 'lucide-react'
-import type { Alat, KategoriAlat, StatusAlat } from '../types'
-
-const KATEGORI: KategoriAlat[] = ['Mixer', 'Amplifier', 'Speaker', 'Microphone', 'Kabel', 'Efek', 'Lainnya']
-const STATUS_LIST: StatusAlat[] = ['Tersedia', 'Dipinjam', 'Rusak', 'Maintenance']
+import { KATEGORI_ALAT, KONDISI_ALAT, STATUS_ALAT, type Alat, type KategoriAlat, type StatusAlat } from '../types'
 
 const statusColor: Record<StatusAlat, string> = {
   Tersedia: 'bg-emerald-100 text-emerald-700',
@@ -30,6 +27,7 @@ export default function Inventaris({ alat, onTambah, onUpdate, onHapus }: Invent
   const [editId, setEditId] = useState<string | null>(null)
   const [form, setForm] = useState(emptyForm())
   const [confirmHapus, setConfirmHapus] = useState<string | null>(null)
+  const [errorMsg, setErrorMsg] = useState('')
 
   const filtered = alat.filter(a => {
     const matchSearch = a.nama.toLowerCase().includes(search.toLowerCase()) || a.kode.toLowerCase().includes(search.toLowerCase())
@@ -40,23 +38,41 @@ export default function Inventaris({ alat, onTambah, onUpdate, onHapus }: Invent
   function openTambah() {
     setEditId(null)
     setForm(emptyForm())
+    setErrorMsg('')
     setShowModal(true)
   }
 
   function openEdit(a: Alat) {
     setEditId(a.id)
     setForm({ nama: a.nama, kode: a.kode, kategori: a.kategori, merek: a.merek, jumlah: a.jumlah, jumlahTersedia: a.jumlahTersedia, status: a.status, kondisi: a.kondisi, keterangan: a.keterangan || '' })
+    setErrorMsg('')
     setShowModal(true)
   }
 
+  const normalizedKode = form.kode.trim().toUpperCase()
+  const duplicateKode = alat.some(a => a.id !== editId && a.kode.toUpperCase() === normalizedKode)
+  const invalidJumlah = !Number.isFinite(form.jumlah) || form.jumlah < 1
+  const invalidJumlahTersedia = !Number.isFinite(form.jumlahTersedia) || form.jumlahTersedia < 0 || form.jumlahTersedia > form.jumlah
+  const requiredMissing = !form.nama.trim() || !form.kode.trim() || !form.merek.trim()
+  const formInvalid = duplicateKode || invalidJumlah || invalidJumlahTersedia || requiredMissing
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (editId) {
-      onUpdate(editId, form)
-    } else {
-      onTambah(form)
+    setErrorMsg('')
+    if (formInvalid) {
+      setErrorMsg('Periksa kembali form: pastikan data wajib terisi, kode unik, dan jumlah valid.')
+      return
     }
-    setShowModal(false)
+    try {
+      if (editId) {
+        onUpdate(editId, form)
+      } else {
+        onTambah(form)
+      }
+      setShowModal(false)
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : 'Gagal menyimpan data alat.')
+    }
   }
 
   return (
@@ -74,6 +90,11 @@ export default function Inventaris({ alat, onTambah, onUpdate, onHapus }: Invent
           Tambah Alat
         </button>
       </div>
+      {errorMsg && !showModal && (
+        <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
+          {errorMsg}
+        </div>
+      )}
 
       {/* Filter */}
       <div className="flex flex-col sm:flex-row gap-3">
@@ -92,7 +113,7 @@ export default function Inventaris({ alat, onTambah, onUpdate, onHapus }: Invent
           className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
         >
           <option value="Semua">Semua Kategori</option>
-          {KATEGORI.map(k => <option key={k}>{k}</option>)}
+          {KATEGORI_ALAT.map(k => <option key={k}>{k}</option>)}
         </select>
       </div>
 
@@ -183,7 +204,7 @@ export default function Inventaris({ alat, onTambah, onUpdate, onHapus }: Invent
                   <label className="block text-xs font-medium text-gray-600 mb-1">Kategori</label>
                   <select value={form.kategori} onChange={e => setForm(f => ({ ...f, kategori: e.target.value as KategoriAlat }))}
                     className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                    {KATEGORI.map(k => <option key={k}>{k}</option>)}
+                    {KATEGORI_ALAT.map(k => <option key={k}>{k}</option>)}
                   </select>
                 </div>
                 <div>
@@ -197,11 +218,13 @@ export default function Inventaris({ alat, onTambah, onUpdate, onHapus }: Invent
                   <label className="block text-xs font-medium text-gray-600 mb-1">Jumlah Total</label>
                   <input type="number" min={1} value={form.jumlah} onChange={e => setForm(f => ({ ...f, jumlah: +e.target.value }))}
                     className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                  {invalidJumlah && <p className="text-xs text-red-600 mt-1">Jumlah total minimal 1.</p>}
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Jumlah Tersedia</label>
                   <input type="number" min={0} max={form.jumlah} value={form.jumlahTersedia} onChange={e => setForm(f => ({ ...f, jumlahTersedia: +e.target.value }))}
                     className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                  {invalidJumlahTersedia && <p className="text-xs text-red-600 mt-1">Jumlah tersedia harus 0 sampai jumlah total.</p>}
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -209,14 +232,15 @@ export default function Inventaris({ alat, onTambah, onUpdate, onHapus }: Invent
                   <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
                   <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value as StatusAlat }))}
                     className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                    {STATUS_LIST.map(s => <option key={s}>{s}</option>)}
+                    {STATUS_ALAT.map(s => <option key={s}>{s}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Kondisi</label>
-                  <input value={form.kondisi} onChange={e => setForm(f => ({ ...f, kondisi: e.target.value }))}
-                    placeholder="Baik / Perlu perbaikan"
-                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                  <select value={form.kondisi} onChange={e => setForm(f => ({ ...f, kondisi: e.target.value as Alat['kondisi'] }))}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    {KONDISI_ALAT.map(k => <option key={k}>{k}</option>)}
+                  </select>
                 </div>
               </div>
               <div>
@@ -224,13 +248,21 @@ export default function Inventaris({ alat, onTambah, onUpdate, onHapus }: Invent
                 <textarea rows={2} value={form.keterangan} onChange={e => setForm(f => ({ ...f, keterangan: e.target.value }))}
                   className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none" />
               </div>
+              {duplicateKode && (
+                <p className="text-xs text-red-600 -mt-2">Kode alat sudah digunakan oleh data lain.</p>
+              )}
+              {errorMsg && (
+                <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
+                  {errorMsg}
+                </div>
+              )}
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={() => setShowModal(false)}
                   className="flex-1 border border-gray-200 text-gray-700 rounded-xl py-2.5 text-sm font-medium hover:bg-gray-50 transition-colors">
                   Batal
                 </button>
-                <button type="submit"
-                  className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl py-2.5 text-sm font-medium transition-colors flex items-center justify-center gap-2">
+                <button type="submit" disabled={formInvalid}
+                  className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-200 disabled:text-gray-500 text-white rounded-xl py-2.5 text-sm font-medium transition-colors flex items-center justify-center gap-2">
                   <CheckCircle2 className="w-4 h-4" />
                   {editId ? 'Simpan Perubahan' : 'Tambah Alat'}
                 </button>
@@ -255,7 +287,15 @@ export default function Inventaris({ alat, onTambah, onUpdate, onHapus }: Invent
               <button onClick={() => setConfirmHapus(null)} className="flex-1 border border-gray-200 text-gray-700 rounded-xl py-2.5 text-sm font-medium hover:bg-gray-50">
                 Batal
               </button>
-              <button onClick={() => { onHapus(confirmHapus); setConfirmHapus(null) }}
+              <button onClick={() => {
+                try {
+                  onHapus(confirmHapus)
+                  setConfirmHapus(null)
+                } catch (error) {
+                  setConfirmHapus(null)
+                  setErrorMsg(error instanceof Error ? error.message : 'Gagal menghapus alat.')
+                }
+              }}
                 className="flex-1 bg-red-600 hover:bg-red-700 text-white rounded-xl py-2.5 text-sm font-medium transition-colors">
                 Hapus
               </button>

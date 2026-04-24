@@ -1,13 +1,22 @@
-export type KategoriAlat =
-  | 'Mixer'
-  | 'Amplifier'
-  | 'Speaker'
-  | 'Microphone'
-  | 'Kabel'
-  | 'Efek'
-  | 'Lainnya'
+export const KATEGORI_ALAT = [
+  'Mixer',
+  'Amplifier',
+  'Speaker',
+  'Microphone',
+  'Kabel',
+  'Efek',
+  'Lainnya',
+] as const
 
-export type StatusAlat = 'Tersedia' | 'Dipinjam' | 'Rusak' | 'Maintenance'
+export type KategoriAlat = (typeof KATEGORI_ALAT)[number]
+
+export const STATUS_ALAT = ['Tersedia', 'Dipinjam', 'Rusak', 'Maintenance'] as const
+
+export type StatusAlat = (typeof STATUS_ALAT)[number]
+
+export const KONDISI_ALAT = ['Baik', 'Perlu Perbaikan', 'Rusak Ringan', 'Rusak Berat'] as const
+
+export type KondisiAlat = (typeof KONDISI_ALAT)[number]
 
 export interface Alat {
   id: string
@@ -18,7 +27,7 @@ export interface Alat {
   jumlah: number
   jumlahTersedia: number
   status: StatusAlat
-  kondisi: string
+  kondisi: KondisiAlat
   keterangan?: string
   createdAt: string
 }

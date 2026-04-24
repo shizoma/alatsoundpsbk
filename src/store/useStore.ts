@@ -1,19 +1,15 @@
 import { useState, useEffect } from 'react'
-import type { Alat, Transaksi } from '../types'
+import { KATEGORI_ALAT, KONDISI_ALAT, STATUS_ALAT, type Alat, type KategoriAlat, type KondisiAlat, type StatusAlat, type Transaksi } from '../types'
+import { importedAlat } from '../data/importedAlat'
 
 const ALAT_KEY = 'psbk_alat'
 const TRANSAKSI_KEY = 'psbk_transaksi'
 
-const defaultAlat: Alat[] = [
-  { id: '1', nama: 'Mixer Allen & Heath', kode: 'MX-001', kategori: 'Mixer', merek: 'Allen & Heath', jumlah: 2, jumlahTersedia: 2, status: 'Tersedia', kondisi: 'Baik', createdAt: new Date().toISOString() },
-  { id: '2', nama: 'Amplifier Crown', kode: 'AMP-001', kategori: 'Amplifier', merek: 'Crown', jumlah: 4, jumlahTersedia: 4, status: 'Tersedia', kondisi: 'Baik', createdAt: new Date().toISOString() },
-  { id: '3', nama: 'Speaker Aktif JBL 15"', kode: 'SPK-001', kategori: 'Speaker', merek: 'JBL', jumlah: 8, jumlahTersedia: 8, status: 'Tersedia', kondisi: 'Baik', createdAt: new Date().toISOString() },
-  { id: '4', nama: 'Microphone Shure SM58', kode: 'MIC-001', kategori: 'Microphone', merek: 'Shure', jumlah: 10, jumlahTersedia: 10, status: 'Tersedia', kondisi: 'Baik', createdAt: new Date().toISOString() },
-  { id: '5', nama: 'Microphone Wireless Shure', kode: 'MIC-002', kategori: 'Microphone', merek: 'Shure', jumlah: 6, jumlahTersedia: 6, status: 'Tersedia', kondisi: 'Baik', createdAt: new Date().toISOString() },
-  { id: '6', nama: 'Kabel XLR 10m', kode: 'KBL-001', kategori: 'Kabel', merek: 'Canare', jumlah: 20, jumlahTersedia: 20, status: 'Tersedia', kondisi: 'Baik', createdAt: new Date().toISOString() },
-  { id: '7', nama: 'DI Box', kode: 'EFX-001', kategori: 'Efek', merek: 'Behringer', jumlah: 4, jumlahTersedia: 4, status: 'Tersedia', kondisi: 'Baik', createdAt: new Date().toISOString() },
-  { id: '8', nama: 'Speaker Monitor', kode: 'SPK-002', kategori: 'Speaker', merek: 'Yamaha', jumlah: 4, jumlahTersedia: 4, status: 'Tersedia', kondisi: 'Baik', createdAt: new Date().toISOString() },
-]
+const defaultAlat: Alat[] = importedAlat
+
+const kategoriSet = new Set<KategoriAlat>(KATEGORI_ALAT)
+const kondisiSet = new Set<KondisiAlat>(KONDISI_ALAT)
+const statusSet = new Set<StatusAlat>(STATUS_ALAT)
 
 function loadData<T>(key: string, fallback: T): T {
   try {
@@ -28,28 +24,180 @@ function saveData<T>(key: string, data: T): void {
   localStorage.setItem(key, JSON.stringify(data))
 }
 
+function shouldReplaceWithImported(data: Alat[]): boolean {
+  if (data.length === 0) return true
+  const demoCodes = new Set(['MX-001', 'AMP-001', 'SPK-001', 'MIC-001', 'MIC-002', 'KBL-001', 'EFX-001', 'SPK-002'])
+  const hasDemoData = data.every(item => demoCodes.has(item.kode.toUpperCase()))
+  return hasDemoData
+}
+
+function normalizeText(value: string): string {
+  return value.trim().replace(/\s+/g, ' ')
+}
+
+function normalizeKode(value: string): string {
+  return normalizeText(value).toUpperCase()
+}
+
+function deriveStatus(jumlahTersedia: number, status: StatusAlat): StatusAlat {
+  if (status === 'Rusak' || status === 'Maintenance') {
+    return status
+  }
+  return jumlahTersedia <= 0 ? 'Dipinjam' : 'Tersedia'
+}
+
+type KeluarPayload = Omit<Transaksi, 'id' | 'createdAt' | 'status' | 'tanggalKembaliAktual' | 'petugasKembali'>
+
+function normalizeAlatInput(
+  raw: Omit<Alat, 'id' | 'createdAt'>,
+  existing: Alat[],
+  editingId?: string
+): Omit<Alat, 'id' | 'createdAt'> {
+  const nama = normalizeText(raw.nama)
+  const kode = normalizeKode(raw.kode)
+  const merek = normalizeText(raw.merek)
+  const keterangan = normalizeText(raw.keterangan || '')
+  const jumlah = Number(raw.jumlah)
+  const jumlahTersedia = Number(raw.jumlahTersedia)
+
+  if (!nama) throw new Error('Nama alat wajib diisi.')
+  if (!kode) throw new Error('Kode alat wajib diisi.')
+  if (!merek) throw new Error('Merek alat wajib diisi.')
+  if (!kategoriSet.has(raw.kategori)) throw new Error('Kategori alat tidak valid.')
+  if (!kondisiSet.has(raw.kondisi)) throw new Error('Kondisi alat tidak valid.')
+  if (!statusSet.has(raw.status)) throw new Error('Status alat tidak valid.')
+  if (!Number.isFinite(jumlah) || jumlah < 1) throw new Error('Jumlah total minimal 1.')
+  if (!Number.isFinite(jumlahTersedia) || jumlahTersedia < 0) throw new Error('Jumlah tersedia tidak boleh negatif.')
+  if (jumlahTersedia > jumlah) throw new Error('Jumlah tersedia tidak boleh melebihi jumlah total.')
+
+  const duplicate = existing.find(a => a.id !== editingId && a.kode.toUpperCase() === kode)
+  if (duplicate) throw new Error(`Kode alat "${kode}" sudah digunakan.`)
+
+  const nextStatus = deriveStatus(jumlahTersedia, raw.status)
+
+  return {
+    ...raw,
+    nama,
+    kode,
+    merek,
+    keterangan,
+    jumlah,
+    jumlahTersedia,
+    status: nextStatus,
+    kondisi: raw.kondisi,
+  }
+}
+
+function sanitizeAlat(raw: unknown): Alat | null {
+  if (!raw || typeof raw !== 'object') return null
+  const source = raw as Partial<Alat>
+  if (!source.id || !source.createdAt) return null
+
+  const kategori = kategoriSet.has(source.kategori as KategoriAlat) ? (source.kategori as KategoriAlat) : 'Lainnya'
+  const kondisi = kondisiSet.has(source.kondisi as KondisiAlat) ? (source.kondisi as KondisiAlat) : 'Baik'
+  const status = statusSet.has(source.status as StatusAlat) ? (source.status as StatusAlat) : 'Tersedia'
+
+  const jumlah = Math.max(1, Math.floor(Number(source.jumlah) || 0))
+  const jumlahTersediaRaw = Math.floor(Number(source.jumlahTersedia) || 0)
+  const jumlahTersedia = Math.max(0, Math.min(jumlah, jumlahTersediaRaw))
+
+  return {
+    id: source.id,
+    createdAt: source.createdAt,
+    nama: normalizeText(source.nama || 'Tanpa Nama'),
+    kode: normalizeKode(source.kode || source.id),
+    kategori,
+    merek: normalizeText(source.merek || '-'),
+    jumlah,
+    jumlahTersedia,
+    status: deriveStatus(jumlahTersedia, status),
+    kondisi,
+    keterangan: normalizeText(source.keterangan || ''),
+  }
+}
+
+function sanitizeAlatCollection(raw: Alat[]): Alat[] {
+  const seen = new Set<string>()
+  const result: Alat[] = []
+
+  for (const item of raw) {
+    const alat = sanitizeAlat(item)
+    if (!alat) continue
+    const kodeKey = alat.kode.toUpperCase()
+    if (seen.has(kodeKey)) continue
+    seen.add(kodeKey)
+    result.push(alat)
+  }
+
+  return result.length > 0 ? result : defaultAlat
+}
+
 export function useStore() {
-  const [alat, setAlatState] = useState<Alat[]>(() => loadData(ALAT_KEY, defaultAlat))
+  const [alat, setAlatState] = useState<Alat[]>(() => {
+    const loaded = sanitizeAlatCollection(loadData(ALAT_KEY, defaultAlat))
+    return shouldReplaceWithImported(loaded) ? sanitizeAlatCollection(defaultAlat) : loaded
+  })
   const [transaksi, setTransaksiState] = useState<Transaksi[]>(() => loadData(TRANSAKSI_KEY, []))
 
   useEffect(() => { saveData(ALAT_KEY, alat) }, [alat])
   useEffect(() => { saveData(TRANSAKSI_KEY, transaksi) }, [transaksi])
 
   function tambahAlat(data: Omit<Alat, 'id' | 'createdAt'>) {
-    const baru: Alat = { ...data, id: crypto.randomUUID(), createdAt: new Date().toISOString() }
+    const normalized = normalizeAlatInput(data, alat)
+    const baru: Alat = { ...normalized, id: crypto.randomUUID(), createdAt: new Date().toISOString() }
     setAlatState(prev => [...prev, baru])
     return baru
   }
 
   function updateAlat(id: string, data: Partial<Alat>) {
-    setAlatState(prev => prev.map(a => a.id === id ? { ...a, ...data } : a))
+    const existing = alat.find(a => a.id === id)
+    if (!existing) throw new Error('Data alat tidak ditemukan.')
+
+    const merged: Omit<Alat, 'id' | 'createdAt'> = {
+      nama: data.nama ?? existing.nama,
+      kode: data.kode ?? existing.kode,
+      kategori: data.kategori ?? existing.kategori,
+      merek: data.merek ?? existing.merek,
+      jumlah: data.jumlah ?? existing.jumlah,
+      jumlahTersedia: data.jumlahTersedia ?? existing.jumlahTersedia,
+      status: data.status ?? existing.status,
+      kondisi: data.kondisi ?? existing.kondisi,
+      keterangan: data.keterangan ?? existing.keterangan ?? '',
+    }
+
+    const sedangDipinjam = transaksi
+      .filter(t => t.alatId === id && t.status === 'Keluar')
+      .reduce((sum, t) => sum + t.jumlah, 0)
+    const minimalTersedia = Math.max(0, sedangDipinjam)
+
+    if ((merged.jumlah ?? existing.jumlah) < sedangDipinjam) {
+      throw new Error(`Jumlah total tidak boleh kurang dari ${sedangDipinjam} unit yang masih dipinjam.`)
+    }
+
+    if ((merged.jumlahTersedia ?? existing.jumlahTersedia) < minimalTersedia) {
+      throw new Error(`Jumlah tersedia tidak boleh kurang dari ${minimalTersedia} unit selama ada pinjaman aktif.`)
+    }
+
+    const normalized = normalizeAlatInput(merged, alat, id)
+    setAlatState(prev => prev.map(a => a.id === id ? { ...a, ...normalized } : a))
   }
 
   function hapusAlat(id: string) {
+    const hasActive = transaksi.some(t => t.alatId === id && t.status === 'Keluar')
+    if (hasActive) {
+      throw new Error('Alat tidak bisa dihapus karena masih ada transaksi peminjaman aktif.')
+    }
     setAlatState(prev => prev.filter(a => a.id !== id))
   }
 
-  function keluarkanAlat(data: Omit<Transaksi, 'id' | 'createdAt' | 'status' | 'tanggalKembaliAktual' | 'petugasKembali'>) {
+  function keluarkanAlat(data: KeluarPayload) {
+    const targetAlat = alat.find(a => a.id === data.alatId)
+    if (!targetAlat) throw new Error('Alat tidak ditemukan.')
+    if (data.jumlah < 1) throw new Error('Jumlah pinjam minimal 1.')
+    if (data.jumlah > targetAlat.jumlahTersedia) {
+      throw new Error(`Stok ${targetAlat.nama} tidak mencukupi.`)
+    }
+
     const trx: Transaksi = {
       ...data,
       id: crypto.randomUUID(),
@@ -60,11 +208,74 @@ export function useStore() {
     setAlatState(prev =>
       prev.map(a =>
         a.id === data.alatId
-          ? { ...a, jumlahTersedia: a.jumlahTersedia - data.jumlah, status: a.jumlahTersedia - data.jumlah <= 0 ? 'Dipinjam' : a.status }
+          ? (() => {
+            const nextTersedia = a.jumlahTersedia - data.jumlah
+            return {
+              ...a,
+              jumlahTersedia: nextTersedia,
+              status: deriveStatus(nextTersedia, a.status),
+            }
+          })()
           : a
       )
     )
     return trx
+  }
+
+  function keluarkanBanyakAlat(
+    data: Omit<KeluarPayload, 'alatId' | 'namaAlat' | 'kodeAlat' | 'jumlah'>,
+    items: Array<{ alatId: string; jumlah: number }>
+  ) {
+    if (items.length === 0) {
+      throw new Error('Pilih minimal satu alat.')
+    }
+
+    const merged = new Map<string, number>()
+    for (const item of items) {
+      const qty = Math.floor(Number(item.jumlah))
+      if (!item.alatId || qty < 1) {
+        throw new Error('Jumlah semua item harus minimal 1.')
+      }
+      merged.set(item.alatId, (merged.get(item.alatId) || 0) + qty)
+    }
+
+    const createdAt = new Date().toISOString()
+    const nextTrx: Transaksi[] = []
+
+    for (const [alatId, jumlah] of merged.entries()) {
+      const targetAlat = alat.find(a => a.id === alatId)
+      if (!targetAlat) throw new Error('Ada item alat yang tidak ditemukan.')
+      if (jumlah > targetAlat.jumlahTersedia) {
+        throw new Error(`Stok ${targetAlat.nama} hanya ${targetAlat.jumlahTersedia} unit.`)
+      }
+
+      nextTrx.push({
+        ...data,
+        alatId,
+        jumlah,
+        namaAlat: targetAlat.nama,
+        kodeAlat: targetAlat.kode,
+        id: crypto.randomUUID(),
+        status: 'Keluar',
+        createdAt,
+      })
+    }
+
+    setTransaksiState(prev => [...prev, ...nextTrx])
+    setAlatState(prev =>
+      prev.map(a => {
+        const keluarQty = merged.get(a.id) || 0
+        if (keluarQty === 0) return a
+        const nextTersedia = a.jumlahTersedia - keluarQty
+        return {
+          ...a,
+          jumlahTersedia: nextTersedia,
+          status: deriveStatus(nextTersedia, a.status),
+        }
+      })
+    )
+
+    return nextTrx
   }
 
   function kembalikanAlat(transaksiId: string, petugasKembali: string, catatan?: string) {
@@ -83,12 +294,19 @@ export function useStore() {
       setAlatState(prev =>
         prev.map(a =>
           a.id === trx.alatId
-            ? { ...a, jumlahTersedia: Math.min(a.jumlah, a.jumlahTersedia + trx.jumlah), status: 'Tersedia' }
+            ? (() => {
+              const nextTersedia = Math.min(a.jumlah, a.jumlahTersedia + trx.jumlah)
+              return {
+                ...a,
+                jumlahTersedia: nextTersedia,
+                status: deriveStatus(nextTersedia, a.status),
+              }
+            })()
             : a
         )
       )
     }
   }
 
-  return { alat, transaksi, tambahAlat, updateAlat, hapusAlat, keluarkanAlat, kembalikanAlat }
+  return { alat, transaksi, tambahAlat, updateAlat, hapusAlat, keluarkanAlat, keluarkanBanyakAlat, kembalikanAlat }
 }
