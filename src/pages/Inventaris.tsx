@@ -136,6 +136,7 @@ export default function Inventaris({ alat, onTambah, onUpdate, onHapus }: Invent
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
+                  <th className="text-center px-4 py-3 font-semibold text-gray-600 w-12">No</th>
                   <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Kode</th>
                   <th className="text-left px-4 py-3 font-semibold text-gray-600">Nama Alat</th>
                   <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Kategori</th>
@@ -152,6 +153,7 @@ export default function Inventaris({ alat, onTambah, onUpdate, onHapus }: Invent
                     key={a.id}
                     className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'} hover:bg-indigo-50/60 transition-colors`}
                   >
+                    <td className="px-4 py-3 text-center text-xs font-semibold text-gray-500">{idx + 1}</td>
                     <td className="px-4 py-3 font-mono text-xs text-indigo-600 font-semibold">{a.kode}</td>
                     <td className="px-4 py-3">
                       <p className="font-medium text-gray-800">{a.nama}</p>
