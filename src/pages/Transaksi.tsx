@@ -9,7 +9,7 @@ interface TransaksiPageProps {
     data: Omit<Transaksi, 'id' | 'createdAt' | 'status' | 'tanggalKembaliAktual' | 'petugasKembali' | 'alatId' | 'namaAlat' | 'kodeAlat' | 'jumlah'>,
     items: Array<{ alatId: string; jumlah: number }>
   ) => void
-  onKembali: (transaksiId: string, petugas: string, catatan?: string) => void
+  onKembaliBatch: (transaksiIds: string[], petugas: string, catatan?: string) => void
 }
 
 const today = () => new Date().toISOString().split('T')[0]
@@ -23,7 +23,7 @@ const emptyKeluar = () => ({
   petugasKeluar: '', catatan: ''
 })
 
-export default function TransaksiPage({ alat, transaksi, onKeluarBatch, onKembali }: TransaksiPageProps) {
+export default function TransaksiPage({ alat, transaksi, onKeluarBatch, onKembaliBatch }: TransaksiPageProps) {
   const [tab, setTab] = useState<'keluar' | 'kembali'>('keluar')
 
   // Form Keluar
@@ -36,7 +36,7 @@ export default function TransaksiPage({ alat, transaksi, onKeluarBatch, onKembal
 
   // Form Kembali
   const [searchTrx, setSearchTrx] = useState('')
-  const [selectedTrx, setSelectedTrx] = useState<Transaksi | null>(null)
+  const [selectedTrxIds, setSelectedTrxIds] = useState<string[]>([])
   const [petugasKembali, setPetugasKembali] = useState('')
   const [catatanKembali, setCatatanKembali] = useState('')
   const [successKembali, setSuccessKembali] = useState(false)
@@ -55,7 +55,9 @@ export default function TransaksiPage({ alat, transaksi, onKeluarBatch, onKembal
 
   function pilihAlat(a: Alat) {
     setSelectedItems(prev => {
-      if (prev.some(i => i.alatId === a.id)) return prev
+      if (prev.some(i => i.alatId === a.id)) {
+        return prev.filter(i => i.alatId !== a.id)
+      }
       return [...prev, { alatId: a.id, jumlah: 1 }]
     })
   }
@@ -90,11 +92,15 @@ export default function TransaksiPage({ alat, transaksi, onKeluarBatch, onKembal
     }
   }
 
+  function toggleTrx(trxId: string) {
+    setSelectedTrxIds(prev => prev.includes(trxId) ? prev.filter(id => id !== trxId) : [...prev, trxId])
+  }
+
   function handleSubmitKembali(e: React.FormEvent) {
     e.preventDefault()
-    if (!selectedTrx) return
-    onKembali(selectedTrx.id, petugasKembali, catatanKembali)
-    setSelectedTrx(null)
+    if (selectedTrxIds.length === 0) return
+    onKembaliBatch(selectedTrxIds, petugasKembali, catatanKembali)
+    setSelectedTrxIds([])
     setPetugasKembali('')
     setCatatanKembali('')
     setSearchTrx('')
@@ -110,6 +116,8 @@ export default function TransaksiPage({ alat, transaksi, onKeluarBatch, onKembal
     .filter((value): value is { alat: Alat; jumlah: number } => Boolean(value))
   const totalItemDipinjam = selectedDetail.reduce((sum, item) => sum + item.jumlah, 0)
   const isTerlambat = (t: Transaksi) => new Date(t.tanggalKembaliRencana) < new Date()
+  const selectedTrxList = trxAktif.filter(t => selectedTrxIds.includes(t.id))
+  const totalKembaliUnit = selectedTrxList.reduce((sum, t) => sum + t.jumlah, 0)
 
   return (
     <div className="space-y-5">
@@ -276,8 +284,7 @@ export default function TransaksiPage({ alat, transaksi, onKeluarBatch, onKembal
       {tab === 'kembali' && (
         <div className="space-y-4">
           {/* Cari transaksi aktif */}
-          {!selectedTrx && (
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
               <h3 className="font-semibold text-gray-800 flex items-center gap-2 mb-4">
                 <ArrowDownLeft className="w-5 h-5 text-emerald-600" />
                 Pilih Transaksi yang Dikembalikan
@@ -295,9 +302,11 @@ export default function TransaksiPage({ alat, transaksi, onKeluarBatch, onKembal
                   {filteredTrx.map(t => (
                     <div
                       key={t.id}
-                      onClick={() => setSelectedTrx(t)}
+                      onClick={() => toggleTrx(t.id)}
                       className={`p-4 rounded-xl border cursor-pointer hover:border-emerald-400 transition-colors ${
-                        isTerlambat(t) ? 'border-red-200 bg-red-50' : 'border-gray-200 hover:bg-gray-50'
+                        selectedTrxIds.includes(t.id)
+                          ? 'border-emerald-300 bg-emerald-50'
+                          : isTerlambat(t) ? 'border-red-200 bg-red-50' : 'border-gray-200 hover:bg-gray-50'
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2">
@@ -311,6 +320,9 @@ export default function TransaksiPage({ alat, transaksi, onKeluarBatch, onKembal
                         </div>
                         <div className="text-right flex-shrink-0">
                           <span className="font-bold text-gray-700 text-sm">{t.jumlah} unit</span>
+                          {selectedTrxIds.includes(t.id) && (
+                            <div className="text-xs text-emerald-700 mt-1">Terpilih</div>
+                          )}
                           {isTerlambat(t) && (
                             <div className="flex items-center gap-1 text-xs text-red-600 mt-1">
                               <AlertTriangle className="w-3 h-3" />
@@ -323,44 +335,51 @@ export default function TransaksiPage({ alat, transaksi, onKeluarBatch, onKembal
                   ))}
                 </div>
               )}
-            </div>
-          )}
+          </div>
 
           {/* Form Konfirmasi Kembali */}
-          {selectedTrx && (
+          {selectedTrxIds.length > 0 && (
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-semibold text-gray-800 flex items-center gap-2">
                   <ArrowDownLeft className="w-5 h-5 text-emerald-600" />
                   Konfirmasi Pengembalian
                 </h3>
-                <button onClick={() => setSelectedTrx(null)} className="p-1.5 hover:bg-gray-100 rounded-lg">
+                <button onClick={() => setSelectedTrxIds([])} className="p-1.5 hover:bg-gray-100 rounded-lg">
                   <X className="w-4 h-4 text-gray-500" />
                 </button>
               </div>
 
               {/* Detail Transaksi */}
-              <div className={`p-4 rounded-xl mb-5 ${isTerlambat(selectedTrx) ? 'bg-red-50 border border-red-200' : 'bg-gray-50 border border-gray-200'}`}>
-                <div className="grid grid-cols-2 gap-2 text-sm">
+              <div className="p-4 rounded-xl mb-5 bg-gray-50 border border-gray-200">
+                <div className="grid grid-cols-2 gap-2 text-sm mb-3">
                   <div>
-                    <p className="text-xs text-gray-400">Alat</p>
-                    <p className="font-semibold text-gray-800">{selectedTrx.namaAlat}</p>
+                    <p className="text-xs text-gray-400">Jumlah Transaksi</p>
+                    <p className="font-semibold text-gray-800">{selectedTrxList.length} transaksi</p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-400">Jumlah</p>
-                    <p className="font-semibold text-gray-800">{selectedTrx.jumlah} unit</p>
+                    <p className="text-xs text-gray-400">Total Unit</p>
+                    <p className="font-semibold text-gray-800">{totalKembaliUnit} unit</p>
                   </div>
                   <div>
                     <p className="text-xs text-gray-400">Peminjam</p>
-                    <p className="font-medium text-gray-700">{selectedTrx.peminjam}</p>
+                    <p className="font-medium text-gray-700">{selectedTrxList[0]?.peminjam || '-'}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-400">Rencana Kembali</p>
-                    <p className={`font-medium ${isTerlambat(selectedTrx) ? 'text-red-600' : 'text-gray-700'}`}>
-                      {new Date(selectedTrx.tanggalKembaliRencana).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })}
-                      {isTerlambat(selectedTrx) && ' (TERLAMBAT)'}
-                    </p>
+                    <p className="text-xs text-gray-400">Terlambat</p>
+                    <p className="font-medium text-gray-700">{selectedTrxList.filter(isTerlambat).length} transaksi</p>
                   </div>
+                </div>
+                <div className="space-y-2 max-h-40 overflow-y-auto">
+                  {selectedTrxList.map(t => (
+                    <div key={t.id} className="bg-white border border-gray-200 rounded-lg px-3 py-2 flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-gray-800">{t.namaAlat}</p>
+                        <p className="text-xs text-gray-500">{t.kodeAlat}</p>
+                      </div>
+                      <span className="text-xs font-medium text-indigo-700">{t.jumlah} unit</span>
+                    </div>
+                  ))}
                 </div>
               </div>
 
@@ -377,10 +396,10 @@ export default function TransaksiPage({ alat, transaksi, onKeluarBatch, onKembal
                     placeholder="Misal: Baik, ada goresan kecil, dll."
                     className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none" />
                 </div>
-                <button type="submit"
+                <button type="submit" disabled={selectedTrxIds.length === 0}
                   className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl py-3 font-semibold text-sm transition-colors flex items-center justify-center gap-2">
                   <CheckCircle2 className="w-4 h-4" />
-                  Konfirmasi Alat Kembali
+                  Konfirmasi Alat Kembali ({selectedTrxIds.length})
                 </button>
               </form>
             </div>

@@ -10,7 +10,7 @@ type Page = 'dashboard' | 'inventaris' | 'transaksi' | 'riwayat'
 
 export default function App() {
   const [page, setPage] = useState<Page>('dashboard')
-  const { alat, transaksi, tambahAlat, updateAlat, hapusAlat, keluarkanBanyakAlat, kembalikanAlat } = useStore()
+  const { alat, transaksi, tambahAlat, updateAlat, hapusAlat, keluarkanBanyakAlat, kembalikanBanyakAlat, resetRiwayatTransaksi } = useStore()
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -23,10 +23,10 @@ export default function App() {
           <Inventaris alat={alat} onTambah={tambahAlat} onUpdate={updateAlat} onHapus={hapusAlat} />
         )}
         {page === 'transaksi' && (
-          <TransaksiPage alat={alat} transaksi={transaksi} onKeluarBatch={keluarkanBanyakAlat} onKembali={kembalikanAlat} />
+          <TransaksiPage alat={alat} transaksi={transaksi} onKeluarBatch={keluarkanBanyakAlat} onKembaliBatch={kembalikanBanyakAlat} />
         )}
         {page === 'riwayat' && (
-          <Riwayat transaksi={transaksi} />
+          <Riwayat transaksi={transaksi} onResetRiwayat={resetRiwayatTransaksi} />
         )}
       </main>
     </div>

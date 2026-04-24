@@ -1,12 +1,13 @@
 import { useState } from 'react'
-import { Search, ArrowUpRight, ArrowDownLeft, AlertTriangle, FileText } from 'lucide-react'
+import { Search, ArrowUpRight, ArrowDownLeft, AlertTriangle, FileText, Trash2 } from 'lucide-react'
 import type { Transaksi } from '../types'
 
 interface RiwayatProps {
   transaksi: Transaksi[]
+  onResetRiwayat: () => void
 }
 
-export default function Riwayat({ transaksi }: RiwayatProps) {
+export default function Riwayat({ transaksi, onResetRiwayat }: RiwayatProps) {
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<'Semua' | 'Keluar' | 'Kembali'>('Semua')
   const [filterBulan, setFilterBulan] = useState('')
@@ -38,6 +39,19 @@ export default function Riwayat({ transaksi }: RiwayatProps) {
       <div>
         <h2 className="text-2xl font-bold text-gray-800">Riwayat Transaksi</h2>
         <p className="text-gray-500 text-sm mt-1">{transaksi.length} total transaksi tercatat</p>
+        {transaksi.length > 0 && (
+          <button
+            type="button"
+            onClick={() => {
+              const ok = window.confirm('Hapus semua riwayat transaksi? Tindakan ini tidak bisa dibatalkan.')
+              if (ok) onResetRiwayat()
+            }}
+            className="mt-3 inline-flex items-center gap-2 text-sm bg-red-50 text-red-700 border border-red-200 px-3 py-1.5 rounded-lg hover:bg-red-100 transition-colors"
+          >
+            <Trash2 className="w-4 h-4" />
+            Reset Riwayat
+          </button>
+        )}
       </div>
 
       {/* Filter */}

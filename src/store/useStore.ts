@@ -308,5 +308,69 @@ export function useStore() {
     }
   }
 
-  return { alat, transaksi, tambahAlat, updateAlat, hapusAlat, keluarkanAlat, keluarkanBanyakAlat, kembalikanAlat }
+  function kembalikanBanyakAlat(transaksiIds: string[], petugasKembali: string, catatan?: string) {
+    if (transaksiIds.length === 0) {
+      throw new Error('Pilih minimal satu transaksi untuk dikembalikan.')
+    }
+
+    const idSet = new Set(transaksiIds)
+    const aktifDipilih = transaksi.filter(t => idSet.has(t.id) && t.status === 'Keluar')
+    if (aktifDipilih.length === 0) {
+      throw new Error('Tidak ada transaksi aktif yang dipilih.')
+    }
+
+    const now = new Date().toISOString()
+    setTransaksiState(prev =>
+      prev.map(t =>
+        idSet.has(t.id) && t.status === 'Keluar'
+          ? { ...t, status: 'Kembali', tanggalKembaliAktual: now, petugasKembali, catatan: catatan || t.catatan }
+          : t
+      )
+    )
+
+    const kembaliByAlat = new Map<string, number>()
+    for (const trx of aktifDipilih) {
+      kembaliByAlat.set(trx.alatId, (kembaliByAlat.get(trx.alatId) || 0) + trx.jumlah)
+    }
+
+    setAlatState(prev =>
+      prev.map(a => {
+        const kembaliQty = kembaliByAlat.get(a.id) || 0
+        if (kembaliQty === 0) return a
+        const nextTersedia = Math.min(a.jumlah, a.jumlahTersedia + kembaliQty)
+        return {
+          ...a,
+          jumlahTersedia: nextTersedia,
+          status: deriveStatus(nextTersedia, a.status),
+        }
+      })
+    )
+  }
+
+  function resetRiwayatTransaksi() {
+    setTransaksiState([])
+    setAlatState(prev =>
+      prev.map(a => {
+        const nextTersedia = a.jumlah
+        return {
+          ...a,
+          jumlahTersedia: nextTersedia,
+          status: deriveStatus(nextTersedia, a.status),
+        }
+      })
+    )
+  }
+
+  return {
+    alat,
+    transaksi,
+    tambahAlat,
+    updateAlat,
+    hapusAlat,
+    keluarkanAlat,
+    keluarkanBanyakAlat,
+    kembalikanAlat,
+    kembalikanBanyakAlat,
+    resetRiwayatTransaksi,
+  }
 }
