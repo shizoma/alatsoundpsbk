@@ -39,6 +39,12 @@ function normalizeKode(value: string): string {
   return normalizeText(value).toUpperCase()
 }
 
+function normalizeDate(value?: string): string | undefined {
+  const raw = normalizeText(value || '')
+  if (!raw) return undefined
+  return raw
+}
+
 function deriveStatus(jumlahTersedia: number, status: StatusAlat): StatusAlat {
   if (status === 'Rusak' || status === 'Maintenance') {
     return status
@@ -57,6 +63,9 @@ function normalizeAlatInput(
   const kode = normalizeKode(raw.kode)
   const merek = normalizeText(raw.merek)
   const keterangan = normalizeText(raw.keterangan || '')
+  const catatanMaintenance = normalizeText(raw.catatanMaintenance || '')
+  const tanggalServisTerakhir = normalizeDate(raw.tanggalServisTerakhir)
+  const tanggalServisBerikutnya = normalizeDate(raw.tanggalServisBerikutnya)
   const jumlah = Number(raw.jumlah)
   const jumlahTersedia = Number(raw.jumlahTersedia)
 
@@ -69,6 +78,19 @@ function normalizeAlatInput(
   if (!Number.isFinite(jumlah) || jumlah < 1) throw new Error('Jumlah total minimal 1.')
   if (!Number.isFinite(jumlahTersedia) || jumlahTersedia < 0) throw new Error('Jumlah tersedia tidak boleh negatif.')
   if (jumlahTersedia > jumlah) throw new Error('Jumlah tersedia tidak boleh melebihi jumlah total.')
+  if (tanggalServisTerakhir && Number.isNaN(new Date(tanggalServisTerakhir).getTime())) {
+    throw new Error('Tanggal servis terakhir tidak valid.')
+  }
+  if (tanggalServisBerikutnya && Number.isNaN(new Date(tanggalServisBerikutnya).getTime())) {
+    throw new Error('Tanggal servis berikutnya tidak valid.')
+  }
+  if (tanggalServisTerakhir && tanggalServisBerikutnya) {
+    const lastDate = new Date(tanggalServisTerakhir).getTime()
+    const nextDate = new Date(tanggalServisBerikutnya).getTime()
+    if (nextDate < lastDate) {
+      throw new Error('Tanggal servis berikutnya tidak boleh lebih awal dari servis terakhir.')
+    }
+  }
 
   const duplicate = existing.find(a => a.id !== editingId && a.kode.toUpperCase() === kode)
   if (duplicate) throw new Error(`Kode alat "${kode}" sudah digunakan.`)
@@ -81,6 +103,9 @@ function normalizeAlatInput(
     kode,
     merek,
     keterangan,
+    catatanMaintenance,
+    tanggalServisTerakhir,
+    tanggalServisBerikutnya,
     jumlah,
     jumlahTersedia,
     status: nextStatus,
@@ -100,6 +125,8 @@ function sanitizeAlat(raw: unknown): Alat | null {
   const jumlah = Math.max(1, Math.floor(Number(source.jumlah) || 0))
   const jumlahTersediaRaw = Math.floor(Number(source.jumlahTersedia) || 0)
   const jumlahTersedia = Math.max(0, Math.min(jumlah, jumlahTersediaRaw))
+  const tanggalServisTerakhir = normalizeDate(source.tanggalServisTerakhir)
+  const tanggalServisBerikutnya = normalizeDate(source.tanggalServisBerikutnya)
 
   return {
     id: source.id,
@@ -113,6 +140,9 @@ function sanitizeAlat(raw: unknown): Alat | null {
     status: deriveStatus(jumlahTersedia, status),
     kondisi,
     keterangan: normalizeText(source.keterangan || ''),
+    tanggalServisTerakhir,
+    tanggalServisBerikutnya,
+    catatanMaintenance: normalizeText(source.catatanMaintenance || ''),
   }
 }
 
@@ -163,6 +193,9 @@ export function useStore() {
       status: data.status ?? existing.status,
       kondisi: data.kondisi ?? existing.kondisi,
       keterangan: data.keterangan ?? existing.keterangan ?? '',
+      tanggalServisTerakhir: data.tanggalServisTerakhir ?? existing.tanggalServisTerakhir,
+      tanggalServisBerikutnya: data.tanggalServisBerikutnya ?? existing.tanggalServisBerikutnya,
+      catatanMaintenance: data.catatanMaintenance ?? existing.catatanMaintenance ?? '',
     }
 
     const sedangDipinjam = transaksi
@@ -361,6 +394,37 @@ export function useStore() {
     )
   }
 
+  function jadwalkanMaintenance(
+    id: string,
+    data: { tanggalServisTerakhir?: string; tanggalServisBerikutnya: string; catatanMaintenance?: string }
+  ) {
+    const target = alat.find(a => a.id === id)
+    if (!target) throw new Error('Data alat tidak ditemukan.')
+
+    const nextDate = normalizeDate(data.tanggalServisBerikutnya)
+    const lastDate = normalizeDate(data.tanggalServisTerakhir)
+    if (!nextDate) throw new Error('Tanggal servis berikutnya wajib diisi.')
+    if (Number.isNaN(new Date(nextDate).getTime())) throw new Error('Tanggal servis berikutnya tidak valid.')
+    if (lastDate && Number.isNaN(new Date(lastDate).getTime())) throw new Error('Tanggal servis terakhir tidak valid.')
+    if (lastDate && new Date(nextDate).getTime() < new Date(lastDate).getTime()) {
+      throw new Error('Tanggal servis berikutnya tidak boleh lebih awal dari servis terakhir.')
+    }
+
+    setAlatState(prev =>
+      prev.map(a =>
+        a.id === id
+          ? {
+            ...a,
+            tanggalServisTerakhir: lastDate,
+            tanggalServisBerikutnya: nextDate,
+            catatanMaintenance: normalizeText(data.catatanMaintenance || ''),
+            status: 'Maintenance',
+          }
+          : a
+      )
+    )
+  }
+
   return {
     alat,
     transaksi,
@@ -372,5 +436,6 @@ export function useStore() {
     kembalikanAlat,
     kembalikanBanyakAlat,
     resetRiwayatTransaksi,
+    jadwalkanMaintenance,
   }
 }

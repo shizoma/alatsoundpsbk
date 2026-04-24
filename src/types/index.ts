@@ -29,6 +29,9 @@ export interface Alat {
   status: StatusAlat
   kondisi: KondisiAlat
   keterangan?: string
+  tanggalServisTerakhir?: string
+  tanggalServisBerikutnya?: string
+  catatanMaintenance?: string
   createdAt: string
 }
 

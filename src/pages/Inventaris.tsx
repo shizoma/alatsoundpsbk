@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, Pencil, Trash2, Search, X, CheckCircle2, Package } from 'lucide-react'
+import { Plus, Pencil, Trash2, Search, X, CheckCircle2, Package, Wrench } from 'lucide-react'
 import { KATEGORI_ALAT, KONDISI_ALAT, STATUS_ALAT, type Alat, type KategoriAlat, type StatusAlat } from '../types'
 
 const statusColor: Record<StatusAlat, string> = {
@@ -21,24 +21,48 @@ interface InventarisProps {
   onTambah: (data: Omit<Alat, 'id' | 'createdAt'>) => void
   onUpdate: (id: string, data: Partial<Alat>) => void
   onHapus: (id: string) => void
+  onJadwalkanMaintenance: (
+    id: string,
+    data: { tanggalServisTerakhir?: string; tanggalServisBerikutnya: string; catatanMaintenance?: string }
+  ) => void
 }
 
 const emptyForm = (): Omit<Alat, 'id' | 'createdAt'> => ({
   nama: '', kode: '', kategori: 'Mixer', merek: '', jumlah: 1, jumlahTersedia: 1, status: 'Tersedia', kondisi: 'Baik', keterangan: ''
 })
 
-export default function Inventaris({ alat, onTambah, onUpdate, onHapus }: InventarisProps) {
+export default function Inventaris({ alat, onTambah, onUpdate, onHapus, onJadwalkanMaintenance }: InventarisProps) {
   const [search, setSearch] = useState('')
-  const [filterKategori, setFilterKategori] = useState<KategoriAlat | 'Semua'>('Semua')
+  const [filterKategori, setFilterKategori] = useState<KategoriAlat | 'Semua' | 'Perlu Maintenance'>('Semua')
   const [showModal, setShowModal] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
   const [form, setForm] = useState(emptyForm())
   const [confirmHapus, setConfirmHapus] = useState<string | null>(null)
+  const [maintenanceId, setMaintenanceId] = useState<string | null>(null)
+  const [maintenanceForm, setMaintenanceForm] = useState({
+    tanggalServisTerakhir: '',
+    tanggalServisBerikutnya: '',
+    catatanMaintenance: '',
+  })
   const [errorMsg, setErrorMsg] = useState('')
+
+  const today = new Date()
+  const oneWeekLater = new Date()
+  oneWeekLater.setDate(oneWeekLater.getDate() + 7)
+
+  const isMaintenanceOverdue = (a: Alat) =>
+    Boolean(a.tanggalServisBerikutnya && new Date(a.tanggalServisBerikutnya) < today)
+  const isMaintenanceDueSoon = (a: Alat) =>
+    Boolean(
+      a.tanggalServisBerikutnya &&
+      new Date(a.tanggalServisBerikutnya) >= today &&
+      new Date(a.tanggalServisBerikutnya) <= oneWeekLater
+    )
 
   const filtered = alat.filter(a => {
     const matchSearch = a.nama.toLowerCase().includes(search.toLowerCase()) || a.kode.toLowerCase().includes(search.toLowerCase())
-    const matchKategori = filterKategori === 'Semua' || a.kategori === filterKategori
+    const matchKategori = filterKategori === 'Semua'
+      || (filterKategori === 'Perlu Maintenance' ? isMaintenanceOverdue(a) || isMaintenanceDueSoon(a) : a.kategori === filterKategori)
     return matchSearch && matchKategori
   })
 
@@ -54,6 +78,28 @@ export default function Inventaris({ alat, onTambah, onUpdate, onHapus }: Invent
     setForm({ nama: a.nama, kode: a.kode, kategori: a.kategori, merek: a.merek, jumlah: a.jumlah, jumlahTersedia: a.jumlahTersedia, status: a.status, kondisi: a.kondisi, keterangan: a.keterangan || '' })
     setErrorMsg('')
     setShowModal(true)
+  }
+
+  function openMaintenance(a: Alat) {
+    setMaintenanceId(a.id)
+    setMaintenanceForm({
+      tanggalServisTerakhir: a.tanggalServisTerakhir || '',
+      tanggalServisBerikutnya: a.tanggalServisBerikutnya || '',
+      catatanMaintenance: a.catatanMaintenance || '',
+    })
+    setErrorMsg('')
+  }
+
+  function handleSubmitMaintenance(e: React.FormEvent) {
+    e.preventDefault()
+    if (!maintenanceId) return
+    setErrorMsg('')
+    try {
+      onJadwalkanMaintenance(maintenanceId, maintenanceForm)
+      setMaintenanceId(null)
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : 'Gagal menjadwalkan maintenance.')
+    }
   }
 
   const normalizedKode = form.kode.trim().toUpperCase()
@@ -116,10 +162,11 @@ export default function Inventaris({ alat, onTambah, onUpdate, onHapus }: Invent
         </div>
         <select
           value={filterKategori}
-          onChange={e => setFilterKategori(e.target.value as KategoriAlat | 'Semua')}
+          onChange={e => setFilterKategori(e.target.value as KategoriAlat | 'Semua' | 'Perlu Maintenance')}
           className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
         >
           <option value="Semua">Semua Kategori</option>
+          <option value="Perlu Maintenance">Perlu Maintenance</option>
           {KATEGORI_ALAT.map(k => <option key={k}>{k}</option>)}
         </select>
       </div>
@@ -161,9 +208,21 @@ export default function Inventaris({ alat, onTambah, onUpdate, onHapus }: Invent
                     </td>
                     <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{a.kategori}</td>
                     <td className="px-4 py-3 whitespace-nowrap">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${kondisiColor[a.kondisi]}`}>
-                        {a.kondisi}
-                      </span>
+                      <div className="space-y-1">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${kondisiColor[a.kondisi]}`}>
+                          {a.kondisi}
+                        </span>
+                        {isMaintenanceOverdue(a) && (
+                          <p className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-100 text-red-700 border border-red-200">
+                            Overdue
+                          </p>
+                        )}
+                        {!isMaintenanceOverdue(a) && isMaintenanceDueSoon(a) && (
+                          <p className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-700 border border-amber-200">
+                            Due Soon
+                          </p>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-center font-semibold text-gray-700">{a.jumlah}</td>
                     <td className="px-4 py-3 text-center">
@@ -180,6 +239,9 @@ export default function Inventaris({ alat, onTambah, onUpdate, onHapus }: Invent
                       <div className="flex items-center justify-center gap-2">
                         <button onClick={() => openEdit(a)} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors">
                           <Pencil className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => openMaintenance(a)} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors">
+                          <Wrench className="w-4 h-4" />
                         </button>
                         <button onClick={() => setConfirmHapus(a.id)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors">
                           <Trash2 className="w-4 h-4" />
@@ -318,6 +380,65 @@ export default function Inventaris({ alat, onTambah, onUpdate, onHapus }: Invent
                 Hapus
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Jadwalkan Maintenance */}
+      {maintenanceId && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+            <div className="flex items-center justify-between p-5 border-b border-gray-100">
+              <h3 className="text-lg font-bold text-gray-800">Jadwalkan Maintenance</h3>
+              <button onClick={() => setMaintenanceId(null)} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            <form onSubmit={handleSubmitMaintenance} className="p-5 space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Tanggal Servis Terakhir</label>
+                <input
+                  type="date"
+                  value={maintenanceForm.tanggalServisTerakhir}
+                  onChange={e => setMaintenanceForm(f => ({ ...f, tanggalServisTerakhir: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Tanggal Servis Berikutnya *</label>
+                <input
+                  required
+                  type="date"
+                  value={maintenanceForm.tanggalServisBerikutnya}
+                  onChange={e => setMaintenanceForm(f => ({ ...f, tanggalServisBerikutnya: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Catatan Maintenance</label>
+                <textarea
+                  rows={2}
+                  value={maintenanceForm.catatanMaintenance}
+                  onChange={e => setMaintenanceForm(f => ({ ...f, catatanMaintenance: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                />
+              </div>
+              <div className="flex gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setMaintenanceId(null)}
+                  className="flex-1 border border-gray-200 text-gray-700 rounded-xl py-2.5 text-sm font-medium hover:bg-gray-50"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 bg-amber-600 hover:bg-amber-700 text-white rounded-xl py-2.5 text-sm font-medium"
+                >
+                  Simpan Jadwal
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

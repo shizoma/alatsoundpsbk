@@ -14,6 +14,13 @@ export default function Dashboard({ alat, transaksi, onNavigate }: DashboardProp
   const totalTersedia = alat.reduce((s, a) => s + a.jumlahTersedia, 0)
   const totalDipinjam = totalAlat - totalTersedia
   const alatBermasalah = alat.filter(a => a.status === 'Rusak' || a.status === 'Maintenance')
+  const today = new Date()
+  const nextWeek = new Date()
+  nextWeek.setDate(nextWeek.getDate() + 7)
+  const maintenanceOverdue = alat.filter(a => a.tanggalServisBerikutnya && new Date(a.tanggalServisBerikutnya) < today)
+  const maintenanceDueSoon = alat.filter(
+    a => a.tanggalServisBerikutnya && new Date(a.tanggalServisBerikutnya) >= today && new Date(a.tanggalServisBerikutnya) <= nextWeek
+  )
 
   const sedangKeluar = transaksi.filter(t => t.status === 'Keluar')
   const hariIni = new Date().toDateString()
@@ -163,6 +170,36 @@ export default function Dashboard({ alat, transaksi, onNavigate }: DashboardProp
           </div>
         )}
       </div>
+
+      {(maintenanceOverdue.length > 0 || maintenanceDueSoon.length > 0) && (
+        <div className="bg-white rounded-2xl shadow-sm border border-indigo-100 p-5">
+          <h3 className="font-semibold text-indigo-700 flex items-center gap-2 mb-3">
+            <AlertTriangle className="w-4 h-4" />
+            Reminder Maintenance
+          </h3>
+          <div className="flex gap-2 flex-wrap mb-3">
+            <span className="text-xs bg-red-100 text-red-700 px-3 py-1.5 rounded-full font-semibold border border-red-200">
+              {maintenanceOverdue.length} overdue
+            </span>
+            <span className="text-xs bg-amber-100 text-amber-700 px-3 py-1.5 rounded-full font-semibold border border-amber-200">
+              {maintenanceDueSoon.length} due 7 hari
+            </span>
+          </div>
+          <div className="space-y-2">
+            {[...maintenanceOverdue.slice(0, 3), ...maintenanceDueSoon.slice(0, 3)].map(a => (
+              <div key={a.id} className="flex items-center justify-between text-sm bg-indigo-50 rounded-lg px-3 py-2">
+                <div>
+                  <p className="font-medium text-gray-800">{a.nama}</p>
+                  <p className="text-xs text-gray-500">{a.kode}</p>
+                </div>
+                <span className="text-xs text-indigo-700 font-medium">
+                  {a.tanggalServisBerikutnya ? new Date(a.tanggalServisBerikutnya).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' }) : '-'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Transaksi Terbaru */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
