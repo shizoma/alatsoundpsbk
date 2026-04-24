@@ -9,6 +9,13 @@ const statusColor: Record<StatusAlat, string> = {
   Maintenance: 'bg-orange-100 text-orange-700',
 }
 
+const kondisiColor: Record<Alat['kondisi'], string> = {
+  Baik: 'bg-emerald-100 text-emerald-700',
+  'Perlu Perbaikan': 'bg-amber-100 text-amber-700',
+  'Rusak Ringan': 'bg-red-100 text-red-700',
+  'Rusak Berat': 'bg-red-200 text-red-800',
+}
+
 interface InventarisProps {
   alat: Alat[]
   onTambah: (data: Omit<Alat, 'id' | 'createdAt'>) => void
@@ -132,6 +139,7 @@ export default function Inventaris({ alat, onTambah, onUpdate, onHapus }: Invent
                   <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Kode</th>
                   <th className="text-left px-4 py-3 font-semibold text-gray-600">Nama Alat</th>
                   <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Kategori</th>
+                  <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Kondisi</th>
                   <th className="text-center px-4 py-3 font-semibold text-gray-600">Total</th>
                   <th className="text-center px-4 py-3 font-semibold text-gray-600">Tersedia</th>
                   <th className="text-left px-4 py-3 font-semibold text-gray-600">Status</th>
@@ -139,14 +147,22 @@ export default function Inventaris({ alat, onTambah, onUpdate, onHapus }: Invent
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {filtered.map(a => (
-                  <tr key={a.id} className="hover:bg-gray-50/50 transition-colors">
+                {filtered.map((a, idx) => (
+                  <tr
+                    key={a.id}
+                    className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'} hover:bg-indigo-50/60 transition-colors`}
+                  >
                     <td className="px-4 py-3 font-mono text-xs text-indigo-600 font-semibold">{a.kode}</td>
                     <td className="px-4 py-3">
                       <p className="font-medium text-gray-800">{a.nama}</p>
-                      <p className="text-xs text-gray-400">{a.merek} · {a.kondisi}</p>
+                      <p className="text-xs text-gray-400">{a.merek}</p>
                     </td>
                     <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{a.kategori}</td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${kondisiColor[a.kondisi]}`}>
+                        {a.kondisi}
+                      </span>
+                    </td>
                     <td className="px-4 py-3 text-center font-semibold text-gray-700">{a.jumlah}</td>
                     <td className="px-4 py-3 text-center">
                       <span className={`font-semibold ${a.jumlahTersedia === 0 ? 'text-red-500' : 'text-emerald-600'}`}>
